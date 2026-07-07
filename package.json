@@ -1,0 +1,38 @@
+{
+  "name": "vscode-gittools",
+  "displayName": "Git Tools",
+  "description": "Personal git helpers. Delete stale branches (upstream gone + verified merged) across every repo in the workspace.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitTools.deleteStaleBranches",
+        "title": "Delete Stale Branches",
+        "category": "Git Tools",
+        "icon": "$(trash)"
+      }
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "gitTools.deleteStaleBranches",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc",
+    "watch": "tsc -w"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  }
+}

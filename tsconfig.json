@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    // VS Code runs on Node 16+ so ES2020 is safe
+    "target": "ES2020",
+    // VS Code extensions use CommonJS require/module.exports
+    "module": "commonjs",
+    // Compiled .js files go here
+    "outDir": "out",
+    // Enable all strict type checks
+    "strict": true,
+    // Allows default imports from CommonJS modules
+    "esModuleInterop": true,
+    // Skip type checking node_modules — faster builds
+    "skipLibCheck": true
+  },
+  // Only compile files in src/
+  "include": ["src"]
+}
