@@ -1,17 +1,12 @@
 import { gh } from "./exec";
 
-export interface MergedPr {
+export interface HeadPr {
   number: number;
-  headRefName: string;
+  /** "OPEN" | "CLOSED" | "MERGED" */
+  state: string;
+  mergedAt: string | null;
   headRefOid: string;
-  mergedAt: string;
-}
-
-export interface MergedPrLookup {
-  /** false when gh is missing, unauthenticated, offline, or the remote isn't GitHub. */
-  available: boolean;
-  /** headRefName -> most recently merged PR for that branch. */
-  byHead: Map<string, MergedPr>;
+  url: string;
 }
 
 /** Extract "owner/repo" from a git remote URL (ssh or https), or null if not GitHub. */
@@ -20,29 +15,44 @@ export function parseSlug(remoteUrl: string): string | null {
   return m ? m[1] : null;
 }
 
-/** One batched `gh pr list --state merged` per repo, indexed by head branch name. */
-export async function getMergedPrs(repoPath: string, remoteUrl: string | null): Promise<MergedPrLookup> {
-  const slug = remoteUrl ? parseSlug(remoteUrl) : null;
-  if (!slug) {
-    return { available: false, byHead: new Map() };
-  }
+/**
+ * PRs whose head is `branch`, any state. `available` is false only when gh itself
+ * can't be used (missing / unauthenticated / offline) so callers can fall back —
+ * an empty `prs` with `available: true` means "gh works, this branch had no PR".
+ *
+ * Queried per branch rather than as one capped `--state merged` batch, so it's
+ * authoritative no matter how many PRs the repo has.
+ */
+export async function prsForHead(
+  repoPath: string,
+  slug: string,
+  branch: string,
+): Promise<{ available: boolean; prs: HeadPr[] }> {
   try {
     const out = await gh(repoPath, [
-      "pr", "list", "-R", slug, "--state", "merged",
-      "--json", "number,headRefName,headRefOid,mergedAt",
-      "--limit", "300",
+      "pr", "list", "-R", slug, "--head", branch, "--state", "all",
+      "--json", "number,state,mergedAt,headRefOid,url",
+      "--limit", "20",
     ]);
-    const prs = JSON.parse(out) as MergedPr[];
-    const byHead = new Map<string, MergedPr>();
-    for (const pr of prs) {
-      const existing = byHead.get(pr.headRefName);
-      // mergedAt is ISO 8601, so lexical comparison gives recency.
-      if (!existing || pr.mergedAt > existing.mergedAt) {
-        byHead.set(pr.headRefName, pr);
-      }
-    }
-    return { available: true, byHead };
+    return { available: true, prs: JSON.parse(out) as HeadPr[] };
   } catch {
-    return { available: false, byHead: new Map() };
+    return { available: false, prs: [] };
   }
+}
+
+/** Most recently merged PR among the given, or undefined if none merged. */
+export function pickMerged(prs: HeadPr[]): HeadPr | undefined {
+  const merged = prs.filter((p) => p.mergedAt !== null);
+  if (merged.length === 0) {
+    return undefined;
+  }
+  return merged.reduce((a, b) => (b.mergedAt! > a.mergedAt! ? b : a));
+}
+
+/** Newest PR (highest number) for context/linking when none merged. */
+export function pickLatest(prs: HeadPr[]): HeadPr | undefined {
+  if (prs.length === 0) {
+    return undefined;
+  }
+  return prs.reduce((a, b) => (b.number > a.number ? b : a));
 }

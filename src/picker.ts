@@ -45,11 +45,15 @@ async function load(repos: Repo[]): Promise<StaleBranch[]> {
 function toItem(b: StaleBranch): BranchItem {
   const icon = b.verdict === "safe" ? "$(git-branch)" : b.verdict === "warn" ? "$(warning)" : "$(circle-slash)";
   const description = [b.reason, b.dateRel].filter(Boolean).join(" · ");
+  const buttons: vscode.QuickInputButton[] = b.prUrl
+    ? [{ iconPath: new vscode.ThemeIcon("link-external"), tooltip: `Open PR #${b.prNumber}` }]
+    : [];
   return {
     label: `${icon} ${b.name}`,
     description,
     detail: b.subject || undefined,
     branch: b,
+    buttons,
   };
 }
 
@@ -110,6 +114,13 @@ function showPicker(repos: Repo[], branches: StaleBranch[]): void {
       return;
     }
     render(fresh);
+  });
+
+  qp.onDidTriggerItemButton((e) => {
+    const url = e.item.branch?.prUrl;
+    if (url) {
+      vscode.env.openExternal(vscode.Uri.parse(url));
+    }
   });
 
   qp.onDidAccept(async () => {

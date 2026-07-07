@@ -21,7 +21,9 @@ A "stale" branch is one whose upstream is **gone** (its remote branch was delete
 | `warn` | Merged PR found but local tip is ahead of the merged head, or no merged PR found, or gh unavailable | `-D` only after a modal confirm |
 | `current` | The checked-out branch | never (skipped) |
 
-Merge status comes from one batched `gh pr list --state merged` per repo, matched by head branch name and verified against the PR's head SHA. This is why **multi-commit squash merges classify correctly** — the check never relies on commit reachability.
+Merge status comes from `gh pr list --head <branch> --state all`, run **per branch** (not one capped batch), matched to the merged PR and verified against its head SHA. Querying per branch keeps it authoritative regardless of how many PRs the repo has, and lets a `warn` row name why — `merged #NNN — local commits beyond merged head`, `PR #NNN closed — not merged`, or `no PR found`. Because the check never relies on commit reachability, **multi-commit squash merges classify correctly**.
+
+Any branch with an associated PR (merged or not) gets a link button in its row — click it to open the PR in the browser.
 
 **Fallback:** if `gh` is missing/unauthenticated/offline, the extension falls back to a whole-branch patch-id match against the base branch (finds the squash commit). This handles clean multi-commit squashes but breaks if the squash was hand-edited, so those rows are marked heuristic and require manual confirm.
 
@@ -38,8 +40,8 @@ Merge status comes from one batched `gh pr list --state merged` per repo, matche
 ```sh
 npm install && npm run compile
 
-# Symlink into VS Code's extensions dir (Developer Mode on, or run elevated)
-cmd //c mklink /D "%USERPROFILE%\.vscode\extensions\vscode-gittools" "d:\code\misc\vscode-gittools"
+# Link into VS Code's extensions dir. A junction needs no elevation (cmd):
+mklink /J "%USERPROFILE%\.vscode\extensions\vscode-gittools" "d:\code\misc\vscode-gittools"
 ```
 
 Reload VS Code after symlinking. After code changes, `npm run compile` (or `npm run watch`) and reload.

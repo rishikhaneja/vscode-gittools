@@ -1,5 +1,5 @@
 import { git, tryGit, pipeGit } from "./exec";
-import { getMergedPrs, MergedPrLookup } from "./github";
+import { HeadPr, parseSlug, pickLatest, pickMerged, prsForHead } from "./github";
 import { Repo } from "./repos";
 
 export type Verdict = "safe" | "warn" | "current";
@@ -14,11 +14,16 @@ export interface StaleBranch {
   verdict: Verdict;
   /** Human-readable classification note shown in the picker. */
   reason: string;
+  /** Set when a PR (any state) is associated, so the picker can link it. */
+  prNumber?: number;
+  prUrl?: string;
 }
 
 type RawBranch = Pick<StaleBranch, "repo" | "name" | "tip" | "dateRel" | "subject"> & {
   isCurrent: boolean;
 };
+
+type HeadPrResult = { available: boolean; prs: HeadPr[] };
 
 const TAB = "\t";
 
@@ -82,24 +87,40 @@ async function patchIdMerged(repo: Repo, branch: string, base: string): Promise<
   return set.has(branchId);
 }
 
-async function classify(b: RawBranch, prs: MergedPrLookup, base: string | null): Promise<StaleBranch> {
+async function classify(b: RawBranch, headPrs: HeadPrResult, base: string | null): Promise<StaleBranch> {
   const { isCurrent, ...rest } = b;
   if (isCurrent) {
     return { ...rest, verdict: "current", reason: "checked out — can't delete" };
   }
 
-  const pr = prs.byHead.get(b.name);
-  if (pr) {
-    // Verified merged. Safe only if the local tip has nothing beyond the merged
-    // head — i.e. the tip is an ancestor of (or equal to) the PR's head commit.
-    const contained = await tryGit(b.repo.path, ["merge-base", "--is-ancestor", b.tip, pr.headRefOid]);
-    if (contained !== null) {
-      return { ...rest, verdict: "safe", reason: `merged #${pr.number}` };
+  if (headPrs.available) {
+    const merged = pickMerged(headPrs.prs);
+    if (merged) {
+      // Safe only if the local tip has nothing beyond the merged head — i.e. the
+      // tip is an ancestor of (or equal to) the PR's head commit.
+      const contained = await tryGit(b.repo.path, ["merge-base", "--is-ancestor", b.tip, merged.headRefOid]);
+      const link = { prNumber: merged.number, prUrl: merged.url };
+      if (contained !== null) {
+        return { ...rest, verdict: "safe", reason: `merged #${merged.number}`, ...link };
+      }
+      return { ...rest, verdict: "warn", reason: `merged #${merged.number} — local commits beyond merged head`, ...link };
     }
-    return { ...rest, verdict: "warn", reason: `merged #${pr.number} — local commits beyond merged head` };
+    // No merged PR. Surface a closed/open one for context + linking, if any.
+    const latest = pickLatest(headPrs.prs);
+    if (latest) {
+      return {
+        ...rest,
+        verdict: "warn",
+        reason: `PR #${latest.number} ${latest.state.toLowerCase()} — not merged`,
+        prNumber: latest.number,
+        prUrl: latest.url,
+      };
+    }
+    return { ...rest, verdict: "warn", reason: "no PR found" };
   }
 
-  if (!prs.available && base) {
+  // gh unavailable — heuristic fallback.
+  if (base) {
     try {
       if (await patchIdMerged(b.repo, b.name, base)) {
         return { ...rest, verdict: "safe", reason: "merged (patch-id, heuristic)" };
@@ -107,10 +128,8 @@ async function classify(b: RawBranch, prs: MergedPrLookup, base: string | null):
     } catch {
       // fall through to unverified
     }
-    return { ...rest, verdict: "warn", reason: "unverified (gh unavailable)" };
   }
-
-  return { ...rest, verdict: "warn", reason: "no merged PR found" };
+  return { ...rest, verdict: "warn", reason: "unverified (gh unavailable)" };
 }
 
 /** Gather + classify all gone branches across the given repos. Does not fetch. */
@@ -122,9 +141,16 @@ export async function gatherStale(repos: Repo[]): Promise<StaleBranch[]> {
         return [];
       }
       const remoteUrl = (await tryGit(repo.path, ["remote", "get-url", "origin"]))?.trim() ?? null;
-      const prs = await getMergedPrs(repo.path, remoteUrl);
-      const base = prs.available ? null : await detectBase(repo);
-      return Promise.all(gone.map((b) => classify(b, prs, base)));
+      const slug = remoteUrl ? parseSlug(remoteUrl) : null;
+
+      const headPrs: HeadPrResult[] = slug
+        ? await Promise.all(gone.map((b) => prsForHead(repo.path, slug, b.name)))
+        : gone.map(() => ({ available: false, prs: [] }));
+
+      const ghAvailable = headPrs.some((r) => r.available);
+      const base = ghAvailable ? null : await detectBase(repo);
+
+      return Promise.all(gone.map((b, i) => classify(b, headPrs[i], base)));
     }),
   );
   return perRepo.flat();
