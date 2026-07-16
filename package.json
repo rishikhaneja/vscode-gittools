@@ -15,6 +15,12 @@
         "title": "Delete Stale Branches",
         "category": "Git Tools",
         "icon": "$(trash)"
+      },
+      {
+        "command": "gitTools.openInGitExtensions",
+        "title": "Open in Git Extensions",
+        "category": "Git Tools",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -22,6 +28,18 @@
         {
           "command": "gitTools.deleteStaleBranches",
           "group": "navigation"
+        }
+      ],
+      "scm/sourceControl": [
+        {
+          "command": "gitTools.openInGitExtensions",
+          "group": "inline",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "gitTools.openInGitExtensions",
+          "group": "navigation",
+          "when": "scmProvider == git"
         }
       ]
     }
