@@ -36,6 +36,23 @@ Right-click a repo in the Source Control **Repositories** view → **Open in Git
 
 Contributed to `scm/sourceControl`, so the clicked repo's `rootUri` is the target. From the palette there's no repo context, so it opens the lone workspace repo, or prompts when there are several. `gitex` must be on PATH — it ships with Git Extensions as `gitex.cmd`, so it's launched detached via `cmd.exe`; a non-zero exit surfaces an error.
 
+## Architecture
+
+`src/` → `out/` (git-ignored) via `tsc`; `main` is `out/extension.js`. [src/extension.ts](src/extension.ts) registers both commands; palette and menu entries are declared in `package.json` under `contributes`.
+
+Shared by both commands:
+
+- [src/exec.ts](src/exec.ts) — the only place processes spawn: `git`/`gh` (reject on non-zero), `tryGit` (`null` on failure), `pipeGit` (`git … | git …`, for patch-id).
+- [src/repos.ts](src/repos.ts) — enumerates repos via the built-in `vscode.git` API, not a filesystem scan, so meta-repo sub-repos are found automatically.
+
+**Delete Stale Branches** spans three files:
+
+1. [src/picker.ts](src/picker.ts) — orchestration + UI: prune, gather, the multi-select QuickPick, guarded delete.
+2. [src/stale.ts](src/stale.ts) — finds `[gone]` branches via `for-each-ref`, assigns each a verdict ([how](#how-a-branch-is-classified)).
+3. [src/github.ts](src/github.ts) — per-branch `gh pr list` lookup, `owner/repo` slug parsing.
+
+**Open in Git Extensions** lives entirely in [src/gitext.ts](src/gitext.ts).
+
 ## Dev dependencies
 
 | Package | Why |
@@ -55,6 +72,6 @@ $name = Split-Path -Leaf $PWD
 cmd /c mklink /J "$env:USERPROFILE\.vscode\extensions\$name" "$PWD"
 ```
 
-Reload VS Code after symlinking. After code changes, `npm run compile` (or `npm run watch`) and reload.
+Reload VS Code after symlinking. After code changes, `npm run compile` (or `npm run watch`) and reload. No test suite or linter — verify in the dev host.
 
 Or press **F5** in this folder to launch an Extension Development Host without symlinking.
